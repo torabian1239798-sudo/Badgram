@@ -85,3 +85,6 @@ The app uses Supabase Auth to generate and verify phone OTPs. The deployed Edge 
 The function accepts Iranian E.164 mobile numbers in the `+989xxxxxxxxx` format and converts them to the local `09xxxxxxxxx` receptor format expected by the Kavenegar VerifyLookup API. The API key and hook secret are read only from server environment variables. Never add them to `EXPO_PUBLIC_*` variables.
 
 **Deployment status:** the `send-sms` Edge Function is deployed and active with JWT verification disabled. Real SMS sign-in is not yet verified; it still requires the three server-side secrets, the Authentication Send SMS Hook configuration, Phone Auth configuration, and a successful end-to-end OTP test.
+## Android test APK from GitHub Actions
+
+The `Badgram Android APK` workflow creates a signed debug APK for device testing whenever the feature branch is updated or its pull request is updated. Open the repository's **Actions** tab, select the completed workflow run, and download the `badgram-debug-apk` artifact. This debug build is for testing only; a release-signed APK/AAB and production signing credentials are required for public distribution.
