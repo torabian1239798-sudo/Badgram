@@ -211,9 +211,10 @@ create policy "Members read membership" on public.conversation_members
   );
 
 drop policy if exists "Creator or self adds membership" on public.conversation_members;
-create policy "Creator or self adds membership" on public.conversation_members
+drop policy if exists "Creator adds membership" on public.conversation_members;
+create policy "Creator adds membership" on public.conversation_members
   for insert to authenticated with check (
-    user_id = (select auth.uid()) or public.is_conversation_creator(conversation_id)
+    public.is_conversation_creator(conversation_id)
   );
 
 drop policy if exists "Members send own messages" on public.messages;
