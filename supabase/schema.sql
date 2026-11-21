@@ -184,7 +184,7 @@ revoke execute on function public.find_profile_by_phone(text) from anon;
 revoke execute on function public.list_my_conversations() from anon;
 revoke execute on function public.is_conversation_member(uuid) from anon;
 revoke execute on function public.is_conversation_creator(uuid) from anon;
-revoke execute on function public.rls_auto_enable() from anon, authenticated;
+revoke all on function public.rls_auto_enable() from public, anon, authenticated;
 
 create index if not exists conversations_created_by_idx on public.conversations(created_by);
 create index if not exists messages_sender_id_idx on public.messages(sender_id);
