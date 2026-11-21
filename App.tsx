@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Modal,
   Platform, Pressable, SafeAreaView, StyleSheet, Text, TextInput, View
@@ -83,7 +83,7 @@ export default function App() {
     loadConversations();
   }, [session?.user?.id]);
 
-  const loadConversations = useCallback(async () => {
+  async function loadConversations() {
     if (!session?.user?.id) return;
     setLoadingChats(true);
     const { data, error: listError } = await supabase.rpc("list_my_conversations");
@@ -100,7 +100,7 @@ export default function App() {
       preview: row.last_message || "هنوز پیامی ارسال نشده است",
       time: chatTime(row.last_message_at || row.created_at)
     })));
-  }, [session?.user?.id]);
+  }
 
   async function sendCode() {
     const cleanPhone = normalizePhone(phone);
