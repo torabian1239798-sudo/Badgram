@@ -3,11 +3,14 @@ import "react-native-url-polyfill/auto";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
+// Badgram's public client configuration. Publishable keys are designed for
+// client applications; database access is protected by RLS policies.
+const supabaseUrl =
+  process.env.EXPO_PUBLIC_SUPABASE_URL ?? "https://jdctjzcohearvmnhcown.supabase.co";
 const supabaseKey =
   process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
   process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ??
-  "";
+  "sb_publishable_lv-QlM2upnZefUBwCoTj1A_Fhd5CmXl";
 
 export const isSupabaseConfigured =
   /^https:\/\/.+\.supabase\.co$/.test(supabaseUrl) &&
