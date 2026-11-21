@@ -74,8 +74,8 @@ export default function App() {
     const userPhone = session.user.phone;
     if (userPhone) {
       supabase.from("profiles").upsert(
-        { id: session.user.id, phone: userPhone, display_name: userPhone },
-        { onConflict: "id", ignoreDuplicates: true }
+        { id: session.user.id, phone: userPhone },
+        { onConflict: "id" }
       ).then(({ error: profileError }) => {
         if (profileError) setError(profileError.message);
       });
