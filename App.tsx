@@ -30,6 +30,7 @@ function chatTime(value?: string | null) {
 
 export default function App() {
   const [session, setSession] = useState<any>(null);
+  const [demoMode, setDemoMode] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
@@ -70,7 +71,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!session?.user) return;
+    if (!session?.user || demoMode) return;
     const userPhone = session.user.phone;
     if (userPhone) {
       supabase.from("profiles").upsert(
@@ -81,9 +82,14 @@ export default function App() {
       });
     }
     loadConversations();
-  }, [session?.user?.id]);
+  }, [session?.user?.id, demoMode]);
 
   async function loadConversations() {
+    if (demoMode) {
+      setChats([{ id: "demo-chat-1", title: "گفتگوی آزمایشی بادگرام", is_group: false, preview: "به بادگرام خوش آمدید؛ این یک پیام آزمایشی است.", time: chatTime(new Date().toISOString()) }]);
+      setLoadingChats(false);
+      return;
+    }
     if (!session?.user?.id) return;
     setLoadingChats(true);
     const { data, error: listError } = await supabase.rpc("list_my_conversations");
@@ -139,8 +145,9 @@ export default function App() {
 
   async function openChat(chat: Chat) {
     setError("");
-    setMessages([]);
+    setMessages(demoMode ? [{ id: "demo-message-1", body: "به بادگرام خوش آمدید؛ محیط آزمایشی فعال است.", sender_id: "demo-user", created_at: new Date().toISOString() }] : []);
     setSelected(chat);
+    if (demoMode) return;
     const { data, error: messageError } = await supabase.from("messages")
       .select("id,body,sender_id,created_at")
       .eq("conversation_id", chat.id)
@@ -172,7 +179,15 @@ export default function App() {
 
   async function sendMessage() {
     const body = draft.trim();
-    if (!body || !selected || !session?.user?.id || busy) return;
+    if (!body || !selected || busy) return;
+    if (demoMode) {
+      const item: Message = { id: "demo-" + Date.now(), body, sender_id: "demo-user", created_at: new Date().toISOString() };
+      setMessages(current => [...current, item]);
+      setChats(current => current.map(chat => chat.id === selected.id ? { ...chat, preview: body, time: chatTime(item.created_at) } : chat));
+      setDraft("");
+      return;
+    }
+    if (!session?.user?.id) return;
     setBusy(true);
     setError("");
     const { data, error: sendError } = await supabase.from("messages").insert({
@@ -193,7 +208,7 @@ export default function App() {
   }
 
   async function createConversation() {
-    if (!session?.user?.id) return;
+    if (!session?.user?.id && !demoMode) return;
     const title = newTitle.trim();
     const phones = [...new Set(memberPhones.split(/[\n,،;；]/).map(normalizePhone).filter(Boolean))];
     if (!title) {
@@ -206,6 +221,13 @@ export default function App() {
     }
     setCreating(true);
     setError("");
+    if (demoMode) {
+      const chat: Chat = { id: "demo-chat-" + Date.now(), title, is_group: phones.length > 1, preview: "گفتگوی آزمایشی ساخته شد", time: chatTime(new Date().toISOString()) };
+      setChats(current => [chat, ...current]);
+      setModalOpen(false); setNewTitle(""); setMemberPhones(""); setSelected(chat);
+      setMessages([{ id: "demo-welcome-" + Date.now(), body: "گفتگو در حالت آزمایشی ساخته شد.", sender_id: "demo-user", created_at: new Date().toISOString() }]);
+      return;
+    }
     const memberIds = [session.user.id];
     for (const memberPhone of phones) {
       const { data, error: lookupError } = await supabase.rpc("find_profile_by_phone", {
@@ -262,7 +284,7 @@ export default function App() {
     </View></SafeAreaView>;
   }
 
-  if (!isSupabaseConfigured || !session) return (
+  if (!demoMode && (!isSupabaseConfigured || !session)) return (
     <SafeAreaView style={s.screen}>
       <StatusBar style="light" />
       <View style={s.login}>
@@ -279,7 +301,8 @@ export default function App() {
           {isSupabaseConfigured ? <Pressable style={s.primary} onPress={otpSent ? verifyCode : sendCode} disabled={busy}>
             {busy ? <ActivityIndicator color="#06111F" /> : <Text style={s.primaryText}>{otpSent ? "تأیید و ورود" : "دریافت کد ورود"}</Text>}
           </Pressable> : <Text style={s.note}>فایل .env را از روی .env.example بسازید و آدرس پروژه و کلید Publishable را وارد کنید. سپس برنامه را دوباره اجرا کنید.</Text>}
-          {otpSent && <Pressable onPress={() => { setOtpSent(false); setOtp(""); setError(""); }}><Text style={s.link}>تغییر شماره موبایل</Text></Pressable>}
+          <Pressable onPress={() => { setDemoMode(true); setSession({ user: { id: "demo-user", phone: "حساب آزمایشی" } }); setChats([{ id: "demo-chat-1", title: "گفتگوی آزمایشی بادگرام", is_group: false, preview: "به بادگرام خوش آمدید؛ این یک پیام آزمایشی است.", time: chatTime(new Date().toISOString()) }]); }}><Text style={s.link}>ورود آزمایشی بدون پیامک</Text></Pressable>
+          {otpSent && <Pressable onPress={() => { setOtpSent(false); setOtp(""); setError(""); }}><Text style={s.link}>تغییر شماره موبایل</Text></Pressable>}}
           <Text style={s.note}>ورود پیامکی به فعال بودن Phone Auth و سرویس پیامک در Supabase نیاز دارد.</Text>
         </View>
       </View>
@@ -333,7 +356,7 @@ export default function App() {
         <View style={[s.glass, { margin: 18, width: undefined }]}>
           <Text style={s.heading}>حساب کاربری</Text>
           <Text style={s.muted}>{session.user.phone || session.user.email || "کاربر بادگرام"}</Text>
-          <Pressable style={s.secondary} onPress={() => supabase.auth.signOut()}><Text style={s.secondaryText}>خروج از حساب</Text></Pressable>
+          <Pressable style={s.secondary} onPress={() => { if (demoMode) { setDemoMode(false); setSession(null); setSelected(null); } else supabase.auth.signOut(); }}><Text style={s.secondaryText}>خروج از حساب</Text></Pressable>
         </View>
       ) : loadingChats ? (
         <View style={s.center}><ActivityIndicator color="#75D9F8" /><Text style={s.muted}>در حال دریافت گفتگوها...</Text></View>
