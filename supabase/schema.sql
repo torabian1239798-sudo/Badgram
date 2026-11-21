@@ -177,3 +177,47 @@ begin
     alter publication supabase_realtime add table public.messages;
   end if;
 end $$;
+
+
+-- Hardening and index tuning applied after initial deployment.
+revoke execute on function public.find_profile_by_phone(text) from anon;
+revoke execute on function public.list_my_conversations() from anon;
+revoke execute on function public.is_conversation_member(uuid) from anon;
+revoke execute on function public.is_conversation_creator(uuid) from anon;
+revoke execute on function public.rls_auto_enable() from anon, authenticated;
+
+create index if not exists conversations_created_by_idx on public.conversations(created_by);
+create index if not exists messages_sender_id_idx on public.messages(sender_id);
+
+drop policy if exists "Users read own profile" on public.profiles;
+drop policy if exists "Users create own profile" on public.profiles;
+drop policy if exists "Users update own profile" on public.profiles;
+create policy "Users read own profile" on public.profiles
+  for select to authenticated using (id = (select auth.uid()));
+create policy "Users create own profile" on public.profiles
+  for insert to authenticated with check (id = (select auth.uid()));
+create policy "Users update own profile" on public.profiles
+  for update to authenticated using (id = (select auth.uid()))
+  with check (id = (select auth.uid()));
+
+drop policy if exists "Users create conversations" on public.conversations;
+create policy "Users create conversations" on public.conversations
+  for insert to authenticated with check (created_by = (select auth.uid()));
+
+drop policy if exists "Members read membership" on public.conversation_members;
+create policy "Members read membership" on public.conversation_members
+  for select to authenticated using (
+    user_id = (select auth.uid()) or public.is_conversation_member(conversation_id)
+  );
+
+drop policy if exists "Creator or self adds membership" on public.conversation_members;
+create policy "Creator or self adds membership" on public.conversation_members
+  for insert to authenticated with check (
+    user_id = (select auth.uid()) or public.is_conversation_creator(conversation_id)
+  );
+
+drop policy if exists "Members send own messages" on public.messages;
+create policy "Members send own messages" on public.messages
+  for insert to authenticated with check (
+    sender_id = (select auth.uid()) and public.is_conversation_member(conversation_id)
+  );
