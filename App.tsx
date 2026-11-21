@@ -226,6 +226,7 @@ export default function App() {
       setChats(current => [chat, ...current]);
       setModalOpen(false); setNewTitle(""); setMemberPhones(""); setSelected(chat);
       setMessages([{ id: "demo-welcome-" + Date.now(), body: "گفتگو در حالت آزمایشی ساخته شد.", sender_id: "demo-user", created_at: new Date().toISOString() }]);
+      setCreating(false);
       return;
     }
     const memberIds = [session.user.id];
@@ -302,7 +303,7 @@ export default function App() {
             {busy ? <ActivityIndicator color="#06111F" /> : <Text style={s.primaryText}>{otpSent ? "تأیید و ورود" : "دریافت کد ورود"}</Text>}
           </Pressable> : <Text style={s.note}>فایل .env را از روی .env.example بسازید و آدرس پروژه و کلید Publishable را وارد کنید. سپس برنامه را دوباره اجرا کنید.</Text>}
           <Pressable onPress={() => { setDemoMode(true); setSession({ user: { id: "demo-user", phone: "حساب آزمایشی" } }); setChats([{ id: "demo-chat-1", title: "گفتگوی آزمایشی بادگرام", is_group: false, preview: "به بادگرام خوش آمدید؛ این یک پیام آزمایشی است.", time: chatTime(new Date().toISOString()) }]); }}><Text style={s.link}>ورود آزمایشی بدون پیامک</Text></Pressable>
-          {otpSent && <Pressable onPress={() => { setOtpSent(false); setOtp(""); setError(""); }}><Text style={s.link}>تغییر شماره موبایل</Text></Pressable>}}
+          {otpSent && <Pressable onPress={() => { setOtpSent(false); setOtp(""); setError(""); }}><Text style={s.link}>تغییر شماره موبایل</Text></Pressable>}
           <Text style={s.note}>ورود پیامکی به فعال بودن Phone Auth و سرویس پیامک در Supabase نیاز دارد.</Text>
         </View>
       </View>
