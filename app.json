@@ -1,0 +1,11 @@
+{
+  "expo": {
+    "name": "Badgram",
+    "slug": "badgram",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "android": { "package": "com.badgram.app" },
+    "web": { "bundler": "metro" }
+  }
+}
