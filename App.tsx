@@ -158,7 +158,7 @@ export default function App() {
   }
 
   useEffect(() => {
-    if (!selected?.id) return;
+    if (demoMode || !selected?.id) return;
     const channel = supabase.channel("badgram-messages-" + selected.id)
       .on("postgres_changes", {
         event: "INSERT",
@@ -175,7 +175,7 @@ export default function App() {
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [selected?.id]);
+  }, [selected?.id, demoMode]);
 
   async function sendMessage() {
     const body = draft.trim();
