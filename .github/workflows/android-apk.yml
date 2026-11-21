@@ -15,7 +15,7 @@ permissions:
   contents: read
 
 jobs:
-  build-debug-apk:
+  build-test-apk:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -43,16 +43,20 @@ jobs:
       - name: Generate native Android project
         run: npx expo prebuild --platform android --non-interactive
 
-      - name: Build installable debug APK
+      # A React Native debug variant intentionally does not embed the JS bundle:
+      # it expects Metro on port 8081. Release variants bundle JS/assets into the APK.
+      # The generated Expo template signs the local release variant with the debug
+      # keystore, making this an installable, self-contained test APK (not store-ready).
+      - name: Build self-contained Android test APK
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleRelease
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: badgram-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: badgram-test-apk
+          path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14
