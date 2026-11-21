@@ -8,7 +8,9 @@ on:
       - "**"
       - "!docs/**"
   pull_request:
-    branches: [main]
+    branches:
+      - main
+      - feature/iran-sms-auth
   workflow_dispatch:
 
 permissions:
