@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Modal,
   Platform, Pressable, SafeAreaView, StyleSheet, Text, TextInput, View
@@ -48,6 +48,8 @@ export default function App() {
   const [memberPhones, setMemberPhones] = useState("");
   const [newChatType, setNewChatType] = useState<"private" | "group">("private");
   const [creating, setCreating] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const openChatRequest = useRef(0);
 
   useEffect(() => {
     let alive = true;
@@ -145,6 +147,7 @@ export default function App() {
   }
 
   async function openChat(chat: Chat) {
+    const requestId = ++openChatRequest.current;
     setError("");
     setMessages(demoMode ? [{ id: "demo-message-1", body: "به بادگرام خوش آمدید؛ محیط آزمایشی فعال است.", sender_id: "demo-user", created_at: new Date().toISOString() }] : []);
     setSelected(chat);
@@ -154,6 +157,7 @@ export default function App() {
       .eq("conversation_id", chat.id)
       .order("created_at", { ascending: true })
       .limit(100);
+    if (requestId !== openChatRequest.current) return;
     if (messageError) setError(messageError.message);
     else setMessages((data ?? []) as Message[]);
   }
@@ -348,7 +352,12 @@ export default function App() {
     </SafeAreaView>
   );
 
-  const visibleChats = chats.filter((chat) => tab === "groups" ? chat.is_group : !chat.is_group);
+  const visibleChats = chats.filter((chat) => {
+    const matchesTab = tab === "groups" ? chat.is_group : !chat.is_group;
+    const query = searchQuery.trim().toLocaleLowerCase();
+    const matchesSearch = !query || `${chat.title} ${chat.preview}`.toLocaleLowerCase().includes(query);
+    return matchesTab && matchesSearch;
+  });
 
   return (
     <SafeAreaView style={s.screen}>
@@ -371,6 +380,8 @@ export default function App() {
       ) : loadingChats ? (
         <View style={s.center}><ActivityIndicator color="#75D9F8" /><Text style={s.muted}>در حال دریافت گفتگوها...</Text></View>
       ) : (
+        <>
+        <TextInput value={searchQuery} onChangeText={setSearchQuery} placeholder="جستجو در گفتگوها..." placeholderTextColor="#8293A9" style={s.searchInput} returnKeyType="search" />
         <FlatList data={visibleChats} keyExtractor={(c) => c.id} contentContainerStyle={{ paddingBottom: 100 }}
           ListEmptyComponent={<Text style={s.empty}>{tab === "groups" ? "هنوز عضو گروهی نیستید." : "هنوز گفتگوی خصوصی ندارید. از «گفتگوی جدید» استفاده کنید."}</Text>}
           renderItem={({ item }) => (
@@ -380,6 +391,7 @@ export default function App() {
               <View style={s.meta}><Text style={s.time}>{item.time}</Text></View>
             </Pressable>
           )} />
+        </>
       )}
       <View style={s.nav}>
         <Pressable style={s.navItem} onPress={() => setTab("chats")}><Text style={s.navIcon}>▤</Text><Text style={s.navLabel}>پیام‌ها</Text></Pressable>
@@ -435,6 +447,7 @@ const s = StyleSheet.create({
   section: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 21, paddingTop: 18, paddingBottom: 12 },
   sectionTitle: { color: "#F0F7FF", fontSize: 18, fontWeight: "800" },
   refresh: { color: "#8DE1FF", fontSize: 11 },
+  searchInput: { marginHorizontal: 18, marginBottom: 8, minHeight: 46, borderRadius: 14, backgroundColor: "rgba(255,255,255,.06)", borderWidth: 1, borderColor: "rgba(137,194,235,.18)", color: "white", paddingHorizontal: 15, textAlign: "right" },
   chatRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: "rgba(180,220,255,.07)" },
   chatAvatar: { width: 52, height: 52, borderRadius: 19, backgroundColor: "rgba(88,185,235,.14)", borderWidth: 1, borderColor: "rgba(120,210,255,.23)", alignItems: "center", justifyContent: "center", marginRight: 13 },
   chatAvatarText: { color: "#9BE6FF", fontSize: 21, fontWeight: "800" },
