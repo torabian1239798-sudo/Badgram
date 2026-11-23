@@ -388,6 +388,29 @@ export default function App() {
     } finally { setMediaBusy(false); }
   }
 
+  async function startVoiceRecording() {
+    if (!selected || demoMode || !session?.user?.id || mediaBusy) return;
+    try {
+      const permission = await requestRecordingPermissionsAsync();
+      if (!permission.granted) { setError("برای ضبط پیام صوتی باید اجازه میکروفون را فعال کنید."); return; }
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      await recorder.prepareToRecordAsync();
+      recorder.record();
+      setError("");
+    } catch (recordError: any) { setError(recordError?.message || "شروع ضبط صدا ناموفق بود."); }
+  }
+
+  async function stopAndSendVoice() {
+    if (!recorderState.isRecording || !selected) return;
+    try {
+      await recorder.stop();
+      const uri = recorder.uri;
+      if (!uri) throw new Error("فایل ضبط‌شده در دسترس نیست.");
+      await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
+      await uploadChatAsset({ uri, name: "voice-" + Date.now() + ".m4a", mimeType: "audio/mp4" });
+    } catch (recordError: any) { setError(recordError?.message || "ارسال پیام صوتی ناموفق بود."); }
+  }
+
   async function pickChatMedia() {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images", "videos"], allowsMultipleSelection: false, quality: 0.85
