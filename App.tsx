@@ -1,9 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Modal,
-  Platform, Pressable, SafeAreaView, StyleSheet, Text, TextInput, View
+  Platform, Pressable, SafeAreaView, StyleSheet, Text, TextInput, View, Linking
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
+import * as ImagePicker from "expo-image-picker";
+import * as DocumentPicker from "expo-document-picker";
 import { isSupabaseConfigured, supabase } from "./src/supabase";
 
 type Chat = {
@@ -59,6 +61,7 @@ export default function App() {
   const [groupMembers, setGroupMembers] = useState<Array<{ user_id: string; role: string; display_name?: string | null; phone?: string | null }>>([]);
   const [groupPhone, setGroupPhone] = useState("");
   const [groupBusy, setGroupBusy] = useState(false);
+  const [mediaBusy, setMediaBusy] = useState(false);
   const openChatRequest = useRef(0);
 
   useEffect(() => {
@@ -300,6 +303,89 @@ export default function App() {
     Alert.alert("مدیریت پیام", message.deleted_at ? "این پیام حذف شده است." : message.body, actions);
   }
 
+
+  function mediaMessageBody(path: string, name: string, mime: string, size: number) {
+    return "BG_MEDIA:" + JSON.stringify({ path, name, mime, size });
+  }
+
+  function parseMediaMessage(body: string) {
+    if (!body.startsWith("BG_MEDIA:")) return null;
+    try { return JSON.parse(body.slice(9)) as { path: string; name: string; mime: string; size: number }; }
+    catch { return null; }
+  }
+
+  async function openMediaAttachment(body: string) {
+    const attachment = parseMediaMessage(body);
+    if (!attachment) return;
+    const { data, error: urlError } = await supabase.storage
+      .from("badgram-chat-media").createSignedUrl(attachment.path, 60 * 10);
+    if (urlError || !data?.signedUrl) {
+      setError(urlError?.message || "لینک فایل ساخته نشد.");
+      return;
+    }
+    await Linking.openURL(data.signedUrl);
+  }
+
+  async function uploadChatAsset(asset: { uri: string; name: string; mimeType?: string | null; size?: number | null }) {
+    if (!selected || demoMode || !session?.user?.id) {
+      setError("ارسال فایل فقط در گفتگوی واقعی و پس از ورود امکان‌پذیر است.");
+      return;
+    }
+    const mime = asset.mimeType || "application/octet-stream";
+    const allowed = /^(image\\/(jpeg|png|webp|gif)|video\\/(mp4|quicktime|webm)|audio\\/(mpeg|mp4|aac|ogg|webm|wav)|application\\/pdf)$/.test(mime);
+    if (!allowed) { setError("این نوع فایل پشتیبانی نمی‌شود."); return; }
+    if (asset.size && asset.size > 50 * 1024 * 1024) { setError("حداکثر حجم فایل ۵۰ مگابایت است."); return; }
+    setMediaBusy(true); setError("");
+    try {
+      const response = await fetch(asset.uri);
+      if (!response.ok) throw new Error("خواندن فایل انتخاب‌شده ناموفق بود.");
+      const bytes = await response.arrayBuffer();
+      if (bytes.byteLength > 50 * 1024 * 1024) throw new Error("حداکثر حجم فایل ۵۰ مگابایت است.");
+      const safeName = asset.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-100) || "attachment";
+      const path = selected.id + "/" + session.user.id + "/" + Date.now() + "-" + safeName;
+      const { error: uploadError } = await supabase.storage.from("badgram-chat-media")
+        .upload(path, bytes, { contentType: mime, upsert: false });
+      if (uploadError) throw uploadError;
+      const body = mediaMessageBody(path, asset.name, mime, bytes.byteLength);
+      const { data, error: messageError } = await supabase.from("messages").insert({
+        conversation_id: selected.id, sender_id: session.user.id, body
+      }).select("id,body,sender_id,created_at,reply_to_message_id").single();
+      if (messageError) {
+        await supabase.storage.from("badgram-chat-media").remove([path]);
+        throw messageError;
+      }
+      if (data) setMessages(current => current.some(item => item.id === data.id) ? current : [...current, data as Message]);
+      setChats(current => current.map(chat => chat.id === selected.id
+        ? { ...chat, preview: "پیوست: " + asset.name, time: chatTime(data?.created_at) } : chat));
+    } catch (uploadError: any) {
+      setError(uploadError?.message || "ارسال فایل انجام نشد.");
+    } finally { setMediaBusy(false); }
+  }
+
+  async function pickChatMedia() {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images", "videos"], allowsMultipleSelection: false, quality: 0.85
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    await uploadChatAsset({
+      uri: asset.uri,
+      name: asset.fileName || ("media-" + Date.now() + (asset.type === "video" ? ".mp4" : ".jpg")),
+      mimeType: asset.mimeType || (asset.type === "video" ? "video/mp4" : "image/jpeg"),
+      size: asset.fileSize
+    });
+  }
+
+  async function pickChatDocument() {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: ["application/pdf", "image/jpeg", "image/png", "image/webp", "video/mp4", "audio/mpeg", "audio/mp4", "audio/ogg"],
+      copyToCacheDirectory: true, multiple: false
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    await uploadChatAsset({ uri: asset.uri, name: asset.name, mimeType: asset.mimeType, size: asset.size });
+  }
+
   async function sendMessage() {
     const body = draft.trim();
     if (!body || !selected || busy) return;
@@ -478,7 +564,13 @@ export default function App() {
             return (
               <Pressable onLongPress={() => manageMessage(item)} delayLongPress={350} style={[s.bubble, mine ? s.mine : s.theirs]}>
                 {!!quoted && <View style={s.replyQuote}><Text style={s.replyQuoteText} numberOfLines={2}>{quoted.deleted_at ? "پیام حذف شده" : quoted.body}</Text></View>}
-                <Text style={s.messageText}>{item.body}</Text>
+                {parseMediaMessage(item.body) ? (
+                  <Pressable onPress={() => openMediaAttachment(item.body)} style={s.attachmentCard}>
+                    <Text style={s.attachmentTitle}>▣ {parseMediaMessage(item.body)?.name}</Text>
+                    <Text style={s.attachmentMeta}>{parseMediaMessage(item.body)?.mime} · {Math.max(1, Math.round((parseMediaMessage(item.body)?.size || 0) / 1024))} KB</Text>
+                    <Text style={s.attachmentOpen}>برای دریافت فایل لمس کنید</Text>
+                  </Pressable>
+                ) : <Text style={s.messageText}>{item.body}</Text>}
                 <Text style={s.messageTime}>{item.edited_at ? "ویرایش‌شده · " : ""}{chatTime(item.created_at)}{mine ? (readMessageIds.includes(item.id) ? "  ✓✓" : "  ✓") : ""}</Text>
               </Pressable>
             );
@@ -488,9 +580,11 @@ export default function App() {
           <Pressable onPress={() => { setReplyTo(null); setEditingMessageId(null); setDraft(""); }}><Text style={s.cancelContext}>لغو</Text></Pressable>
         </View>}
         <View style={s.composer}>
+          {!editingMessageId && <Pressable onPress={pickChatMedia} disabled={mediaBusy} style={s.attachButton}><Text style={s.attachText}>▧</Text></Pressable>}
+          {!editingMessageId && <Pressable onPress={pickChatDocument} disabled={mediaBusy} style={s.attachButton}><Text style={s.attachText}>＋</Text></Pressable>}
           <TextInput value={draft} onChangeText={setDraft} placeholder={editingMessageId ? "متن اصلاح‌شده..." : "پیام بنویسید..."} placeholderTextColor="#8190A4" style={s.composerInput} multiline />
-          <Pressable onPress={sendMessage} style={s.send} disabled={busy || !draft.trim()}>
-            {busy ? <ActivityIndicator color="#06111F" /> : <Text style={s.sendText}>➤</Text>}
+          <Pressable onPress={sendMessage} style={s.send} disabled={busy || mediaBusy || !draft.trim()}>
+            {busy || mediaBusy ? <ActivityIndicator color="#06111F" /> : <Text style={s.sendText}>➤</Text>}
           </Pressable>
         </View>
       </KeyboardAvoidingView>
@@ -642,7 +736,13 @@ const s = StyleSheet.create({
   theirs: { alignSelf: "flex-start", backgroundColor: "rgba(255,255,255,.08)", borderWidth: 1, borderColor: "rgba(255,255,255,.08)" },
   messageText: { color: "#EFF8FF", textAlign: "right", fontSize: 14 },
   messageTime: { color: "#8EA5BA", fontSize: 9, marginTop: 6, textAlign: "left" },
-  composer: { flexDirection: "row", padding: 12, gap: 9, alignItems: "center", borderTopWidth: 1, borderTopColor: "rgba(180,220,255,.1)" },
+  attachButton: { width: 38, height: 42, borderRadius: 12, backgroundColor: "rgba(117,217,248,.12)", alignItems: "center", justifyContent: "center" },
+  attachText: { color: "#9BE6FF", fontSize: 22, fontWeight: "800" },
+  attachmentCard: { minWidth: 180, padding: 10, borderRadius: 12, backgroundColor: "rgba(4,14,27,.45)" },
+  attachmentTitle: { color: "#EAF7FF", textAlign: "right", fontWeight: "700" },
+  attachmentMeta: { color: "#91A8BE", textAlign: "right", fontSize: 10, marginTop: 5 },
+  attachmentOpen: { color: "#8DE1FF", textAlign: "right", fontSize: 11, marginTop: 8 },
+  composer: { flexDirection: "row", padding: 12, gap: 7, alignItems: "center", borderTopWidth: 1, borderTopColor: "rgba(180,220,255,.1)" },
   composerInput: { flex: 1, minHeight: 46, maxHeight: 120, borderRadius: 15, backgroundColor: "rgba(255,255,255,.07)", color: "white", paddingHorizontal: 14, paddingVertical: 10, textAlign: "right" },
   send: { width: 46, height: 46, borderRadius: 15, backgroundColor: "#75D9F8", alignItems: "center", justifyContent: "center" },
   sendText: { color: "#06111F", fontSize: 20, fontWeight: "900" },
