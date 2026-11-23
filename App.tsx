@@ -310,20 +310,43 @@ export default function App() {
 
   function parseMediaMessage(body: string) {
     if (!body.startsWith("BG_MEDIA:")) return null;
-    try { return JSON.parse(body.slice(9)) as { path: string; name: string; mime: string; size: number }; }
-    catch { return null; }
+    try {
+      const value = JSON.parse(body.slice(9));
+      if (!value || typeof value.path !== "string" || typeof value.name !== "string" ||
+          typeof value.mime !== "string" || typeof value.size !== "number" ||
+          !Number.isFinite(value.size) || value.size < 0) return null;
+      const parts = value.path.split("/");
+      if (parts.length !== 3 || !parts.every((part: string) => !!part && part !== "." && part !== "..")) return null;
+      return value as { path: string; name: string; mime: string; size: number };
+    } catch { return null; }
   }
 
   async function openMediaAttachment(body: string) {
     const attachment = parseMediaMessage(body);
-    if (!attachment) return;
-    const { data, error: urlError } = await supabase.storage
-      .from("badgram-chat-media").createSignedUrl(attachment.path, 60 * 10);
-    if (urlError || !data?.signedUrl) {
-      setError(urlError?.message || "لینک فایل ساخته نشد.");
+    if (!attachment || !selected?.id || !session?.user?.id) {
+      setError("اطلاعات پیوست معتبر نیست.");
       return;
     }
-    await Linking.openURL(data.signedUrl);
+    const [conversationId, uploaderId] = attachment.path.split("/");
+    if (conversationId !== selected.id) {
+      setError("این فایل متعلق به گفتگوی دیگری است.");
+      return;
+    }
+    if (!uploaderId) {
+      setError("مسیر فایل معتبر نیست.");
+      return;
+    }
+    try {
+      const { data, error: urlError } = await supabase.storage
+        .from("badgram-chat-media").createSignedUrl(attachment.path, 60 * 10);
+      if (urlError || !data?.signedUrl) {
+        setError(urlError?.message || "لینک فایل ساخته نشد.");
+        return;
+      }
+      await Linking.openURL(data.signedUrl);
+    } catch (error: any) {
+      setError(error?.message || "باز کردن فایل انجام نشد.");
+    }
   }
 
   async function uploadChatAsset(asset: { uri: string; name: string; mimeType?: string | null; size?: number | null }) {
