@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Modal,
   Platform, Pressable, SafeAreaView, StyleSheet, Text, TextInput, View
@@ -18,6 +18,9 @@ type Message = {
   body: string;
   sender_id: string;
   created_at: string;
+  edited_at?: string | null;
+  deleted_at?: string | null;
+  reply_to_message_id?: string | null;
 };
 
 function normalizePhone(value: string) {
@@ -48,6 +51,15 @@ export default function App() {
   const [memberPhones, setMemberPhones] = useState("");
   const [newChatType, setNewChatType] = useState<"private" | "group">("private");
   const [creating, setCreating] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [readMessageIds, setReadMessageIds] = useState<string[]>([]);
+  const [groupManageOpen, setGroupManageOpen] = useState(false);
+  const [groupMembers, setGroupMembers] = useState<Array<{ user_id: string; role: string }>>([]);
+  const [groupPhone, setGroupPhone] = useState("");
+  const [groupBusy, setGroupBusy] = useState(false);
+  const openChatRequest = useRef(0);
 
   useEffect(() => {
     let alive = true;
@@ -145,17 +157,34 @@ export default function App() {
   }
 
   async function openChat(chat: Chat) {
+    const requestId = ++openChatRequest.current;
     setError("");
     setMessages(demoMode ? [{ id: "demo-message-1", body: "به بادگرام خوش آمدید؛ محیط آزمایشی فعال است.", sender_id: "demo-user", created_at: new Date().toISOString() }] : []);
     setSelected(chat);
     if (demoMode) return;
     const { data, error: messageError } = await supabase.from("messages")
-      .select("id,body,sender_id,created_at")
+      .select("id,body,sender_id,created_at,edited_at,deleted_at,reply_to_message_id")
       .eq("conversation_id", chat.id)
       .order("created_at", { ascending: true })
       .limit(100);
-    if (messageError) setError(messageError.message);
-    else setMessages((data ?? []) as Message[]);
+    if (requestId !== openChatRequest.current) return;
+    if (messageError) {
+      setError(messageError.message);
+    } else {
+      const loaded = (data ?? []) as Message[];
+      setMessages(loaded);
+      const incomingIds = loaded.filter((m) => m.sender_id !== session?.user?.id && !m.deleted_at).map((m) => m.id);
+      if (incomingIds.length) {
+        const receipts = incomingIds.map((message_id) => ({ message_id, user_id: session.user.id }));
+        const { error: readError } = await supabase.from("message_read_receipts").upsert(receipts, { onConflict: "message_id,user_id", ignoreDuplicates: true });
+        if (readError) setError(readError.message);
+      }
+      const ownIds = loaded.filter((m) => m.sender_id === session?.user?.id).map((m) => m.id);
+      if (ownIds.length) {
+        const { data: receipts, error: receiptError } = await supabase.from("message_read_receipts").select("message_id").in("message_id", ownIds).neq("user_id", session.user.id);
+        if (!receiptError) setReadMessageIds([...new Set((receipts ?? []).map((r: any) => r.message_id))]);
+      }
+    }
   }
 
   useEffect(() => {
@@ -174,18 +203,107 @@ export default function App() {
           ? { ...chat, preview: incoming.body, time: chatTime(incoming.created_at) }
           : chat));
       })
+      .on("postgres_changes", {
+        event: "UPDATE",
+        schema: "public",
+        table: "messages",
+        filter: "conversation_id=eq." + selected.id
+      }, (payload) => {
+        const updated = payload.new as Message;
+        setMessages((current) => current.map((item) => item.id === updated.id ? { ...item, ...updated } : item));
+      })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [selected?.id, demoMode]);
 
+  async function loadGroupMembers() {
+    if (!selected?.is_group || demoMode) return;
+    const { data, error: memberError } = await supabase.from("conversation_members")
+      .select("user_id,role").eq("conversation_id", selected.id).order("joined_at", { ascending: true });
+    if (memberError) setError(memberError.message);
+    else setGroupMembers((data ?? []) as Array<{ user_id: string; role: string }>);
+  }
+
+  async function addGroupMember() {
+    if (!selected || !groupPhone.trim()) return;
+    const clean = normalizePhone(groupPhone);
+    if (!/^\+[1-9]\d{7,14}$/.test(clean)) { setError("شماره را با کد کشور وارد کنید."); return; }
+    setGroupBusy(true); setError("");
+    const { data, error: lookupError } = await supabase.rpc("find_profile_by_phone", { p_phone: clean });
+    const found = (data ?? [])[0];
+    if (lookupError || !found?.user_id) {
+      setError(lookupError?.message || "این شماره در بادگرام ثبت‌نام نکرده است.");
+      setGroupBusy(false); return;
+    }
+    const { error: insertError } = await supabase.from("conversation_members").insert({ conversation_id: selected.id, user_id: found.user_id });
+    if (insertError) setError(insertError.message);
+    else { setGroupPhone(""); await loadGroupMembers(); }
+    setGroupBusy(false);
+  }
+
+  async function changeGroupMemberRole(userId: string, role: string) {
+    if (!selected) return;
+    setGroupBusy(true); setError("");
+    const { error: roleError } = await supabase.from("conversation_members").update({ role }).eq("conversation_id", selected.id).eq("user_id", userId);
+    if (roleError) setError(roleError.message); else await loadGroupMembers();
+    setGroupBusy(false);
+  }
+
+  async function removeGroupMember(userId: string) {
+    if (!selected) return;
+    setGroupBusy(true); setError("");
+    const { error: removeError } = await supabase.from("conversation_members").delete().eq("conversation_id", selected.id).eq("user_id", userId);
+    if (removeError) setError(removeError.message); else await loadGroupMembers();
+    setGroupBusy(false);
+  }
+
+  async function deleteMessage(message: Message) {
+    if (demoMode) {
+      setMessages((current) => current.map((m) => m.id === message.id ? { ...m, body: "این پیام حذف شد", deleted_at: new Date().toISOString() } : m));
+      return;
+    }
+    const { error: deleteError } = await supabase.from("messages").update({ body: "این پیام حذف شد", deleted_at: new Date().toISOString(), edited_at: null }).eq("id", message.id).eq("sender_id", session.user.id);
+    if (deleteError) setError(deleteError.message);
+    else setMessages((current) => current.map((m) => m.id === message.id ? { ...m, body: "این پیام حذف شد", deleted_at: new Date().toISOString() } : m));
+  }
+
+  function manageMessage(message: Message) {
+    const mine = message.sender_id === session?.user?.id;
+    const actions: any[] = [
+      { text: "پاسخ", onPress: () => { setEditingMessageId(null); setReplyTo(message); } },
+    ];
+    if (mine && !message.deleted_at) {
+      actions.push({ text: "ویرایش", onPress: () => { setReplyTo(null); setEditingMessageId(message.id); setDraft(message.body); } });
+      actions.push({ text: "حذف پیام", style: "destructive", onPress: () => Alert.alert("حذف پیام", "این پیام برای همه اعضای گفتگو حذف شود؟", [{ text: "انصراف", style: "cancel" }, { text: "حذف", style: "destructive", onPress: () => { void deleteMessage(message); } }]) });
+    }
+    actions.push({ text: "بستن", style: "cancel" });
+    Alert.alert("مدیریت پیام", message.deleted_at ? "این پیام حذف شده است." : message.body, actions);
+  }
+
   async function sendMessage() {
     const body = draft.trim();
     if (!body || !selected || busy) return;
+    if (editingMessageId) {
+      if (demoMode) {
+        setMessages((current) => current.map((m) => m.id === editingMessageId ? { ...m, body, edited_at: new Date().toISOString() } : m));
+        setEditingMessageId(null); setDraft(""); return;
+      }
+      setBusy(true);
+      const { data, error: editError } = await supabase.from("messages").update({ body, edited_at: new Date().toISOString() }).eq("id", editingMessageId).eq("sender_id", session.user.id).select("id,body,edited_at").single();
+      setBusy(false);
+      if (editError) setError(editError.message);
+      else if (data) {
+        setMessages((current) => current.map((m) => m.id === data.id ? { ...m, body: data.body, edited_at: data.edited_at } : m));
+        setEditingMessageId(null); setDraft("");
+      }
+      return;
+    }
     if (demoMode) {
-      const item: Message = { id: "demo-" + Date.now(), body, sender_id: "demo-user", created_at: new Date().toISOString() };
+      const item: Message = { id: "demo-" + Date.now(), body, sender_id: "demo-user", created_at: new Date().toISOString(), reply_to_message_id: replyTo?.id ?? null };
       setMessages(current => [...current, item]);
       setChats(current => current.map(chat => chat.id === selected.id ? { ...chat, preview: body, time: chatTime(item.created_at) } : chat));
       setDraft("");
+      setReplyTo(null);
       return;
     }
     if (!session?.user?.id) return;
@@ -194,14 +312,16 @@ export default function App() {
     const { data, error: sendError } = await supabase.from("messages").insert({
       conversation_id: selected.id,
       sender_id: session.user.id,
-      body
-    }).select("id,body,sender_id,created_at").single();
+      body,
+      reply_to_message_id: replyTo?.id ?? null
+    }).select("id,body,sender_id,created_at,reply_to_message_id").single();
     setBusy(false);
     if (sendError) setError(sendError.message);
     else if (data) {
       setMessages((current) => current.some((item) => item.id === data.id)
         ? current : [...current, data as Message]);
       setDraft("");
+      setReplyTo(null);
       setChats((current) => current.map((chat) => chat.id === selected.id
         ? { ...chat, preview: body, time: chatTime(data.created_at) }
         : chat));
@@ -325,30 +445,66 @@ export default function App() {
       <View style={s.header}>
         <Pressable onPress={() => { setSelected(null); setError(""); }}><Text style={s.back}>بازگشت</Text></Pressable>
         <View style={{ flex: 1 }}><Text style={s.chatTitle}>{selected.title}</Text><Text style={s.online}>{selected.is_group ? "گروه" : "گفتگوی خصوصی"}</Text></View>
-        <Text style={s.muted}>•••</Text>
+        {!demoMode && selected.is_group && <Pressable onPress={() => { setGroupManageOpen(true); void loadGroupMembers(); }}><Text style={s.back}>مدیریت گروه</Text></Pressable>}
       </View>
       {!!error && <Text style={s.errorBanner}>{error}</Text>}
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <FlatList style={s.messages} data={messages} keyExtractor={(m) => m.id}
           contentContainerStyle={{ paddingBottom: 12 }}
           ListEmptyComponent={<Text style={s.empty}>هنوز پیامی در این گفتگو وجود ندارد.</Text>}
-          renderItem={({ item }) => (
-            <View style={[s.bubble, item.sender_id === session.user.id ? s.mine : s.theirs]}>
-              <Text style={s.messageText}>{item.body}</Text>
-              <Text style={s.messageTime}>{chatTime(item.created_at)}</Text>
-            </View>
-          )} />
+          renderItem={({ item }) => {
+            const quoted = item.reply_to_message_id ? messages.find((m) => m.id === item.reply_to_message_id) : null;
+            const mine = item.sender_id === session.user.id;
+            return (
+              <Pressable onLongPress={() => manageMessage(item)} delayLongPress={350} style={[s.bubble, mine ? s.mine : s.theirs]}>
+                {!!quoted && <View style={s.replyQuote}><Text style={s.replyQuoteText} numberOfLines={2}>{quoted.deleted_at ? "پیام حذف شده" : quoted.body}</Text></View>}
+                <Text style={s.messageText}>{item.body}</Text>
+                <Text style={s.messageTime}>{item.edited_at ? "ویرایش‌شده · " : ""}{chatTime(item.created_at)}{mine ? (readMessageIds.includes(item.id) ? "  ✓✓" : "  ✓") : ""}</Text>
+              </Pressable>
+            );
+          }} />
+        {(replyTo || editingMessageId) && <View style={s.composerContext}>
+          <Text style={s.composerContextText}>{editingMessageId ? "در حال ویرایش پیام" : "پاسخ به: " + (replyTo?.deleted_at ? "پیام حذف‌شده" : replyTo?.body || "")}</Text>
+          <Pressable onPress={() => { setReplyTo(null); setEditingMessageId(null); setDraft(""); }}><Text style={s.cancelContext}>لغو</Text></Pressable>
+        </View>}
         <View style={s.composer}>
-          <TextInput value={draft} onChangeText={setDraft} placeholder="پیام بنویسید..." placeholderTextColor="#8190A4" style={s.composerInput} multiline />
+          <TextInput value={draft} onChangeText={setDraft} placeholder={editingMessageId ? "متن اصلاح‌شده..." : "پیام بنویسید..."} placeholderTextColor="#8190A4" style={s.composerInput} multiline />
           <Pressable onPress={sendMessage} style={s.send} disabled={busy || !draft.trim()}>
             {busy ? <ActivityIndicator color="#06111F" /> : <Text style={s.sendText}>➤</Text>}
           </Pressable>
         </View>
       </KeyboardAvoidingView>
+      <Modal visible={groupManageOpen} transparent animationType="slide" onRequestClose={() => setGroupManageOpen(false)}>
+        <View style={s.modalBackdrop}>
+          <View style={s.modalCard}>
+            <Text style={s.heading}>مدیریت اعضای گروه</Text>
+            <Text style={s.muted}>مالک می‌تواند مدیر تعیین کند؛ مدیران امکان افزودن و حذف اعضا دارند.</Text>
+            <TextInput value={groupPhone} onChangeText={setGroupPhone} placeholder="شماره عضو جدید، مثل +98912..." placeholderTextColor="#8293A9" style={s.input} />
+            <Pressable style={s.primary} onPress={addGroupMember} disabled={groupBusy}><Text style={s.primaryText}>افزودن عضو</Text></Pressable>
+            <FlatList data={groupMembers} keyExtractor={(m) => m.user_id} style={{ maxHeight: 280 }} renderItem={({item}) => (
+              <View style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "rgba(180,220,255,.1)" }}>
+                <Text style={s.chatName}>{item.user_id.slice(0, 8)}…  ·  {item.role === "owner" ? "مالک" : item.role === "admin" ? "مدیر" : "عضو"}</Text>
+                {item.role !== "owner" && <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+                  {item.role === "member" && <Pressable onPress={() => changeGroupMemberRole(item.user_id, "admin")}><Text style={s.back}>ارتقا به مدیر</Text></Pressable>}
+                  {item.role === "admin" && <Pressable onPress={() => changeGroupMemberRole(item.user_id, "member")}><Text style={s.back}>تنزل به عضو</Text></Pressable>}
+                  <Pressable onPress={() => removeGroupMember(item.user_id)}><Text style={s.cancelContext}>حذف عضو</Text></Pressable>
+                </View>}
+              </View>
+            )} />
+            {!!error && <Text style={s.error}>{error}</Text>}
+            <Pressable style={s.secondary} onPress={() => setGroupManageOpen(false)}><Text style={s.secondaryText}>بستن</Text></Pressable>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 
-  const visibleChats = chats.filter((chat) => tab === "groups" ? chat.is_group : !chat.is_group);
+  const visibleChats = chats.filter((chat) => {
+    const matchesTab = tab === "groups" ? chat.is_group : !chat.is_group;
+    const query = searchQuery.trim().toLocaleLowerCase();
+    const matchesSearch = !query || `${chat.title} ${chat.preview}`.toLocaleLowerCase().includes(query);
+    return matchesTab && matchesSearch;
+  });
 
   return (
     <SafeAreaView style={s.screen}>
@@ -371,6 +527,8 @@ export default function App() {
       ) : loadingChats ? (
         <View style={s.center}><ActivityIndicator color="#75D9F8" /><Text style={s.muted}>در حال دریافت گفتگوها...</Text></View>
       ) : (
+        <>
+        <TextInput value={searchQuery} onChangeText={setSearchQuery} placeholder="جستجو در گفتگوها..." placeholderTextColor="#8293A9" style={s.searchInput} returnKeyType="search" />
         <FlatList data={visibleChats} keyExtractor={(c) => c.id} contentContainerStyle={{ paddingBottom: 100 }}
           ListEmptyComponent={<Text style={s.empty}>{tab === "groups" ? "هنوز عضو گروهی نیستید." : "هنوز گفتگوی خصوصی ندارید. از «گفتگوی جدید» استفاده کنید."}</Text>}
           renderItem={({ item }) => (
@@ -380,6 +538,7 @@ export default function App() {
               <View style={s.meta}><Text style={s.time}>{item.time}</Text></View>
             </Pressable>
           )} />
+        </>
       )}
       <View style={s.nav}>
         <Pressable style={s.navItem} onPress={() => setTab("chats")}><Text style={s.navIcon}>▤</Text><Text style={s.navLabel}>پیام‌ها</Text></Pressable>
@@ -435,6 +594,7 @@ const s = StyleSheet.create({
   section: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 21, paddingTop: 18, paddingBottom: 12 },
   sectionTitle: { color: "#F0F7FF", fontSize: 18, fontWeight: "800" },
   refresh: { color: "#8DE1FF", fontSize: 11 },
+  searchInput: { marginHorizontal: 18, marginBottom: 8, minHeight: 46, borderRadius: 14, backgroundColor: "rgba(255,255,255,.06)", borderWidth: 1, borderColor: "rgba(137,194,235,.18)", color: "white", paddingHorizontal: 15, textAlign: "right" },
   chatRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: "rgba(180,220,255,.07)" },
   chatAvatar: { width: 52, height: 52, borderRadius: 19, backgroundColor: "rgba(88,185,235,.14)", borderWidth: 1, borderColor: "rgba(120,210,255,.23)", alignItems: "center", justifyContent: "center", marginRight: 13 },
   chatAvatarText: { color: "#9BE6FF", fontSize: 21, fontWeight: "800" },
@@ -451,6 +611,11 @@ const s = StyleSheet.create({
   chatTitle: { color: "#F0F8FF", textAlign: "right", fontWeight: "800", fontSize: 16 },
   online: { color: "#75D9A5", textAlign: "right", fontSize: 10, marginTop: 3 },
   messages: { flex: 1, padding: 14 },
+  replyQuote: { borderRightWidth: 2, borderRightColor: "#75D9F8", paddingRight: 8, marginBottom: 8, backgroundColor: "rgba(0,0,0,.12)", paddingVertical: 5 },
+  replyQuoteText: { color: "#9BE6FF", fontSize: 11, textAlign: "right" },
+  composerContext: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, paddingTop: 8 },
+  composerContextText: { color: "#9BE6FF", fontSize: 11, flex: 1, textAlign: "right" },
+  cancelContext: { color: "#FF9BA5", paddingHorizontal: 8 },
   empty: { color: "#8297AD", textAlign: "center", padding: 28, lineHeight: 24 },
   bubble: { maxWidth: "82%", borderRadius: 17, padding: 12, marginVertical: 6 },
   mine: { alignSelf: "flex-end", backgroundColor: "rgba(82,183,225,.22)", borderWidth: 1, borderColor: "rgba(120,220,255,.22)" },

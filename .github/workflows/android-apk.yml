@@ -3,7 +3,7 @@ name: Badgram Android APK
 on:
   push:
     branches:
-      - feature/iran-sms-auth
+      - "feature/**"
     paths:
       - "**"
       - "!docs/**"
