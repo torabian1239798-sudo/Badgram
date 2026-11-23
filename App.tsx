@@ -227,7 +227,7 @@ export default function App() {
   async function addGroupMember() {
     if (!selected || !groupPhone.trim()) return;
     const clean = normalizePhone(groupPhone);
-    if (!/^\\+[1-9]\\d{7,14}$/.test(clean)) { setError("شماره را با کد کشور وارد کنید."); return; }
+    if (!/^\+[1-9]\d{7,14}$/.test(clean)) { setError("شماره را با کد کشور وارد کنید."); return; }
     setGroupBusy(true); setError("");
     const { data, error: lookupError } = await supabase.rpc("find_profile_by_phone", { p_phone: clean });
     const found = (data ?? [])[0];
