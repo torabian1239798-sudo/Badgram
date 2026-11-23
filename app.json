@@ -5,7 +5,20 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
-    "android": { "package": "com.badgram.app" },
-    "web": { "bundler": "metro" }
+    "android": {
+      "package": "com.badgram.app"
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "اجازه دسترسی به میکروفون برای ضبط پیام صوتی در بادگرام",
+          "recordAudioAndroid": true
+        }
+      ]
+    ]
   }
 }
