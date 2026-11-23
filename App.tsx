@@ -7,6 +7,7 @@ import { StatusBar } from "expo-status-bar";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder, useAudioRecorderState, useAudioPlayer } from "expo-audio";
+import { VideoView, useVideoPlayer } from "expo-video";
 import { isSupabaseConfigured, supabase } from "./src/supabase";
 
 type Chat = {
@@ -64,7 +65,9 @@ export default function App() {
   const [groupBusy, setGroupBusy] = useState(false);
   const [mediaBusy, setMediaBusy] = useState(false);
   const [mediaPreviewUrls, setMediaPreviewUrls] = useState<Record<string, string>>({});
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const audioPlayer = useAudioPlayer(null);
+  const videoPlayer = useVideoPlayer(null);
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder);
   const openChatRequest = useRef(0);
@@ -383,6 +386,10 @@ export default function App() {
       if (attachment.mime.startsWith("audio/")) {
         audioPlayer.replace(data.signedUrl);
         audioPlayer.play();
+      } else if (attachment.mime.startsWith("video/")) {
+        setVideoUrl(data.signedUrl);
+        videoPlayer.replace(data.signedUrl);
+        videoPlayer.play();
       } else {
         await Linking.openURL(data.signedUrl);
       }
@@ -642,6 +649,14 @@ export default function App() {
         {!demoMode && selected.is_group && <Pressable onPress={() => { setGroupManageOpen(true); void loadGroupMembers(); }}><Text style={s.back}>مدیریت گروه</Text></Pressable>}
       </View>
       {!!error && <Text style={s.errorBanner}>{error}</Text>}
+      <Modal visible={!!videoUrl} transparent animationType="fade" onRequestClose={() => { setVideoUrl(null); videoPlayer.pause(); }}>
+        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.94)", justifyContent: "center", padding: 16 }}>
+          <Pressable onPress={() => { setVideoUrl(null); videoPlayer.pause(); }} style={{ alignSelf: "flex-end", padding: 12 }}>
+            <Text style={{ color: "#FFFFFF", fontSize: 16 }}>بستن ×</Text>
+          </Pressable>
+          {!!videoUrl && <VideoView player={videoPlayer} style={{ width: "100%", height: 260 }} nativeControls contentFit="contain" />}
+        </View>
+      </Modal>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <FlatList style={s.messages} data={messages} keyExtractor={(m) => m.id}
           contentContainerStyle={{ paddingBottom: 12 }}
