@@ -219,6 +219,19 @@ export default function App() {
         const updated = payload.new as Message;
         setMessages((current) => current.map((item) => item.id === updated.id ? { ...item, ...updated } : item));
       })
+      .on("postgres_changes", {
+        event: "INSERT",
+        schema: "public",
+        table: "message_read_receipts"
+      }, (payload) => {
+        const receipt = payload.new as { message_id?: string; user_id?: string };
+        if (!receipt.message_id || receipt.user_id === session?.user?.id) return;
+        setMessages((current) => {
+          if (!current.some((message) => message.id === receipt.message_id && message.sender_id === session?.user?.id)) return current;
+          setReadMessageIds((ids) => ids.includes(receipt.message_id!) ? ids : [...ids, receipt.message_id!]);
+          return current;
+        });
+      })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [selected?.id, demoMode]);
