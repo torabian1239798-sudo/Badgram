@@ -56,7 +56,7 @@ export default function App() {
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [readMessageIds, setReadMessageIds] = useState<string[]>([]);
   const [groupManageOpen, setGroupManageOpen] = useState(false);
-  const [groupMembers, setGroupMembers] = useState<Array<{ user_id: string; role: string }>>([]);
+  const [groupMembers, setGroupMembers] = useState<Array<{ user_id: string; role: string; display_name?: string | null; phone?: string | null }>>([]);
   const [groupPhone, setGroupPhone] = useState("");
   const [groupBusy, setGroupBusy] = useState(false);
   const openChatRequest = useRef(0);
@@ -220,8 +220,28 @@ export default function App() {
     if (!selected?.is_group || demoMode) return;
     const { data, error: memberError } = await supabase.from("conversation_members")
       .select("user_id,role").eq("conversation_id", selected.id).order("joined_at", { ascending: true });
-    if (memberError) setError(memberError.message);
-    else setGroupMembers((data ?? []) as Array<{ user_id: string; role: string }>);
+    if (memberError) {
+      setError(memberError.message);
+      return;
+    }
+    const members = (data ?? []) as Array<{ user_id: string; role: string }>;
+    const userIds = members.map((member) => member.user_id);
+    if (!userIds.length) {
+      setGroupMembers([]);
+      return;
+    }
+    const { data: profiles, error: profileError } = await supabase.from("profiles")
+      .select("id,display_name,phone").in("id", userIds);
+    if (profileError) {
+      // Keep membership management usable even if profile visibility is restricted by RLS.
+      setGroupMembers(members);
+      return;
+    }
+    const profileById = new Map((profiles ?? []).map((profile: any) => [profile.id, profile]));
+    setGroupMembers(members.map((member) => {
+      const profile = profileById.get(member.user_id) as any;
+      return { ...member, display_name: profile?.display_name ?? null, phone: profile?.phone ?? null };
+    }));
   }
 
   async function addGroupMember() {
@@ -483,7 +503,7 @@ export default function App() {
             <Pressable style={s.primary} onPress={addGroupMember} disabled={groupBusy}><Text style={s.primaryText}>افزودن عضو</Text></Pressable>
             <FlatList data={groupMembers} keyExtractor={(m) => m.user_id} style={{ maxHeight: 280 }} renderItem={({item}) => (
               <View style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "rgba(180,220,255,.1)" }}>
-                <Text style={s.chatName}>{item.user_id.slice(0, 8)}…  ·  {item.role === "owner" ? "مالک" : item.role === "admin" ? "مدیر" : "عضو"}</Text>
+                <Text style={s.chatName}>{item.display_name || item.phone || (item.user_id.slice(0, 8) + "…")}  ·  {item.role === "owner" ? "مالک" : item.role === "admin" ? "مدیر" : "عضو"}</Text>
                 {item.role !== "owner" && <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
                   {item.role === "member" && <Pressable onPress={() => changeGroupMemberRole(item.user_id, "admin")}><Text style={s.back}>ارتقا به مدیر</Text></Pressable>}
                   {item.role === "admin" && <Pressable onPress={() => changeGroupMemberRole(item.user_id, "member")}><Text style={s.back}>تنزل به عضو</Text></Pressable>}
