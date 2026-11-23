@@ -445,7 +445,7 @@ export default function App() {
       <View style={s.header}>
         <Pressable onPress={() => { setSelected(null); setError(""); }}><Text style={s.back}>بازگشت</Text></Pressable>
         <View style={{ flex: 1 }}><Text style={s.chatTitle}>{selected.title}</Text><Text style={s.online}>{selected.is_group ? "گروه" : "گفتگوی خصوصی"}</Text></View>
-        {selected.is_group && <Pressable onPress={() => { setGroupManageOpen(true); void loadGroupMembers(); }}><Text style={s.back}>مدیریت گروه</Text></Pressable>}
+        {!demoMode && selected.is_group && <Pressable onPress={() => { setGroupManageOpen(true); void loadGroupMembers(); }}><Text style={s.back}>مدیریت گروه</Text></Pressable>}
       </View>
       {!!error && <Text style={s.errorBanner}>{error}</Text>}
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
