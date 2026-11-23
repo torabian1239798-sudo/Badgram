@@ -18,6 +18,9 @@ type Message = {
   body: string;
   sender_id: string;
   created_at: string;
+  edited_at?: string | null;
+  deleted_at?: string | null;
+  reply_to_message_id?: string | null;
 };
 
 function normalizePhone(value: string) {
@@ -49,6 +52,9 @@ export default function App() {
   const [newChatType, setNewChatType] = useState<"private" | "group">("private");
   const [creating, setCreating] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [readMessageIds, setReadMessageIds] = useState<string[]>([]);
   const openChatRequest = useRef(0);
 
   useEffect(() => {
@@ -153,13 +159,28 @@ export default function App() {
     setSelected(chat);
     if (demoMode) return;
     const { data, error: messageError } = await supabase.from("messages")
-      .select("id,body,sender_id,created_at")
+      .select("id,body,sender_id,created_at,edited_at,deleted_at,reply_to_message_id")
       .eq("conversation_id", chat.id)
       .order("created_at", { ascending: true })
       .limit(100);
     if (requestId !== openChatRequest.current) return;
-    if (messageError) setError(messageError.message);
-    else setMessages((data ?? []) as Message[]);
+    if (messageError) {
+      setError(messageError.message);
+    } else {
+      const loaded = (data ?? []) as Message[];
+      setMessages(loaded);
+      const incomingIds = loaded.filter((m) => m.sender_id !== session?.user?.id && !m.deleted_at).map((m) => m.id);
+      if (incomingIds.length) {
+        const receipts = incomingIds.map((message_id) => ({ message_id, user_id: session.user.id }));
+        const { error: readError } = await supabase.from("message_read_receipts").upsert(receipts, { onConflict: "message_id,user_id", ignoreDuplicates: true });
+        if (readError) setError(readError.message);
+      }
+      const ownIds = loaded.filter((m) => m.sender_id === session?.user?.id).map((m) => m.id);
+      if (ownIds.length) {
+        const { data: receipts, error: receiptError } = await supabase.from("message_read_receipts").select("message_id").in("message_id", ownIds).neq("user_id", session.user.id);
+        if (!receiptError) setReadMessageIds([...new Set((receipts ?? []).map((r: any) => r.message_id))]);
+      }
+    }
   }
 
   useEffect(() => {
@@ -182,9 +203,47 @@ export default function App() {
     return () => { supabase.removeChannel(channel); };
   }, [selected?.id, demoMode]);
 
+  async function deleteMessage(message: Message) {
+    if (demoMode) {
+      setMessages((current) => current.map((m) => m.id === message.id ? { ...m, body: "این پیام حذف شد", deleted_at: new Date().toISOString() } : m));
+      return;
+    }
+    const { error: deleteError } = await supabase.from("messages").update({ body: "این پیام حذف شد", deleted_at: new Date().toISOString(), edited_at: null }).eq("id", message.id).eq("sender_id", session.user.id);
+    if (deleteError) setError(deleteError.message);
+    else setMessages((current) => current.map((m) => m.id === message.id ? { ...m, body: "این پیام حذف شد", deleted_at: new Date().toISOString() } : m));
+  }
+
+  function manageMessage(message: Message) {
+    const mine = message.sender_id === session?.user?.id;
+    const actions: any[] = [
+      { text: "پاسخ", onPress: () => { setEditingMessageId(null); setReplyTo(message); } },
+    ];
+    if (mine && !message.deleted_at) {
+      actions.push({ text: "ویرایش", onPress: () => { setReplyTo(null); setEditingMessageId(message.id); setDraft(message.body); } });
+      actions.push({ text: "حذف پیام", style: "destructive", onPress: () => Alert.alert("حذف پیام", "این پیام برای همه اعضای گفتگو حذف شود؟", [{ text: "انصراف", style: "cancel" }, { text: "حذف", style: "destructive", onPress: () => { void deleteMessage(message); } }]) });
+    }
+    actions.push({ text: "بستن", style: "cancel" });
+    Alert.alert("مدیریت پیام", message.deleted_at ? "این پیام حذف شده است." : message.body, actions);
+  }
+
   async function sendMessage() {
     const body = draft.trim();
     if (!body || !selected || busy) return;
+    if (editingMessageId) {
+      if (demoMode) {
+        setMessages((current) => current.map((m) => m.id === editingMessageId ? { ...m, body, edited_at: new Date().toISOString() } : m));
+        setEditingMessageId(null); setDraft(""); return;
+      }
+      setBusy(true);
+      const { data, error: editError } = await supabase.from("messages").update({ body, edited_at: new Date().toISOString() }).eq("id", editingMessageId).eq("sender_id", session.user.id).select("id,body,edited_at").single();
+      setBusy(false);
+      if (editError) setError(editError.message);
+      else if (data) {
+        setMessages((current) => current.map((m) => m.id === data.id ? { ...m, body: data.body, edited_at: data.edited_at } : m));
+        setEditingMessageId(null); setDraft("");
+      }
+      return;
+    }
     if (demoMode) {
       const item: Message = { id: "demo-" + Date.now(), body, sender_id: "demo-user", created_at: new Date().toISOString() };
       setMessages(current => [...current, item]);
@@ -198,14 +257,16 @@ export default function App() {
     const { data, error: sendError } = await supabase.from("messages").insert({
       conversation_id: selected.id,
       sender_id: session.user.id,
-      body
-    }).select("id,body,sender_id,created_at").single();
+      body,
+      reply_to_message_id: replyTo?.id ?? null
+    }).select("id,body,sender_id,created_at,reply_to_message_id").single();
     setBusy(false);
     if (sendError) setError(sendError.message);
     else if (data) {
       setMessages((current) => current.some((item) => item.id === data.id)
         ? current : [...current, data as Message]);
       setDraft("");
+      setReplyTo(null);
       setChats((current) => current.map((chat) => chat.id === selected.id
         ? { ...chat, preview: body, time: chatTime(data.created_at) }
         : chat));
@@ -336,14 +397,23 @@ export default function App() {
         <FlatList style={s.messages} data={messages} keyExtractor={(m) => m.id}
           contentContainerStyle={{ paddingBottom: 12 }}
           ListEmptyComponent={<Text style={s.empty}>هنوز پیامی در این گفتگو وجود ندارد.</Text>}
-          renderItem={({ item }) => (
-            <View style={[s.bubble, item.sender_id === session.user.id ? s.mine : s.theirs]}>
-              <Text style={s.messageText}>{item.body}</Text>
-              <Text style={s.messageTime}>{chatTime(item.created_at)}</Text>
-            </View>
-          )} />
+          renderItem={({ item }) => {
+            const quoted = item.reply_to_message_id ? messages.find((m) => m.id === item.reply_to_message_id) : null;
+            const mine = item.sender_id === session.user.id;
+            return (
+              <Pressable onLongPress={() => manageMessage(item)} delayLongPress={350} style={[s.bubble, mine ? s.mine : s.theirs]}>
+                {!!quoted && <View style={s.replyQuote}><Text style={s.replyQuoteText} numberOfLines={2}>{quoted.deleted_at ? "پیام حذف شده" : quoted.body}</Text></View>}
+                <Text style={s.messageText}>{item.body}</Text>
+                <Text style={s.messageTime}>{item.edited_at ? "ویرایش‌شده · " : ""}{chatTime(item.created_at)}{mine ? (readMessageIds.includes(item.id) ? "  ✓✓" : "  ✓") : ""}</Text>
+              </Pressable>
+            );
+          }} />
+        {(replyTo || editingMessageId) && <View style={s.composerContext}>
+          <Text style={s.composerContextText}>{editingMessageId ? "در حال ویرایش پیام" : "پاسخ به: " + (replyTo?.deleted_at ? "پیام حذف‌شده" : replyTo?.body || "")}</Text>
+          <Pressable onPress={() => { setReplyTo(null); setEditingMessageId(null); setDraft(""); }}><Text style={s.cancelContext}>لغو</Text></Pressable>
+        </View>}
         <View style={s.composer}>
-          <TextInput value={draft} onChangeText={setDraft} placeholder="پیام بنویسید..." placeholderTextColor="#8190A4" style={s.composerInput} multiline />
+          <TextInput value={draft} onChangeText={setDraft} placeholder={editingMessageId ? "متن اصلاح‌شده..." : "پیام بنویسید..."} placeholderTextColor="#8190A4" style={s.composerInput} multiline />
           <Pressable onPress={sendMessage} style={s.send} disabled={busy || !draft.trim()}>
             {busy ? <ActivityIndicator color="#06111F" /> : <Text style={s.sendText}>➤</Text>}
           </Pressable>
@@ -464,6 +534,11 @@ const s = StyleSheet.create({
   chatTitle: { color: "#F0F8FF", textAlign: "right", fontWeight: "800", fontSize: 16 },
   online: { color: "#75D9A5", textAlign: "right", fontSize: 10, marginTop: 3 },
   messages: { flex: 1, padding: 14 },
+  replyQuote: { borderRightWidth: 2, borderRightColor: "#75D9F8", paddingRight: 8, marginBottom: 8, backgroundColor: "rgba(0,0,0,.12)", paddingVertical: 5 },
+  replyQuoteText: { color: "#9BE6FF", fontSize: 11, textAlign: "right" },
+  composerContext: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, paddingTop: 8 },
+  composerContextText: { color: "#9BE6FF", fontSize: 11, flex: 1, textAlign: "right" },
+  cancelContext: { color: "#FF9BA5", paddingHorizontal: 8 },
   empty: { color: "#8297AD", textAlign: "center", padding: 28, lineHeight: 24 },
   bubble: { maxWidth: "82%", borderRadius: 17, padding: 12, marginVertical: 6 },
   mine: { alignSelf: "flex-end", backgroundColor: "rgba(82,183,225,.22)", borderWidth: 1, borderColor: "rgba(120,220,255,.22)" },
