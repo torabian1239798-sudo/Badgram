@@ -6,6 +6,7 @@ import {
 import { StatusBar } from "expo-status-bar";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
+import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from "expo-audio";
 import { isSupabaseConfigured, supabase } from "./src/supabase";
 
 type Chat = {
@@ -62,6 +63,8 @@ export default function App() {
   const [groupPhone, setGroupPhone] = useState("");
   const [groupBusy, setGroupBusy] = useState(false);
   const [mediaBusy, setMediaBusy] = useState(false);
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const recorderState = useAudioRecorderState(recorder);
   const openChatRequest = useRef(0);
 
   useEffect(() => {
