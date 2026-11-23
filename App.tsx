@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Modal,
-  Platform, Pressable, SafeAreaView, StyleSheet, Text, TextInput, View, Linking
+  Platform, Pressable, SafeAreaView, StyleSheet, Text, TextInput, View, Linking, Image
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import * as ImagePicker from "expo-image-picker";
@@ -63,6 +63,7 @@ export default function App() {
   const [groupPhone, setGroupPhone] = useState("");
   const [groupBusy, setGroupBusy] = useState(false);
   const [mediaBusy, setMediaBusy] = useState(false);
+  const [mediaPreviewUrls, setMediaPreviewUrls] = useState<Record<string, string>>({});
   const audioPlayer = useAudioPlayer(null);
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder);
@@ -103,6 +104,29 @@ export default function App() {
     }
     loadConversations();
   }, [session?.user?.id, demoMode]);
+
+  useEffect(() => {
+    if (demoMode || !selected?.id || !messages.length) return;
+    let active = true;
+    const pending = messages.filter((message) => {
+      const attachment = parseMediaMessage(message.body);
+      return !!attachment && attachment.mime.startsWith("image/") && !mediaPreviewUrls[message.id];
+    });
+    if (!pending.length) return;
+    void Promise.all(pending.map(async (message) => {
+      const attachment = parseMediaMessage(message.body);
+      if (!attachment) return null;
+      const { data, error: signedError } = await supabase.storage
+        .from("badgram-chat-media").createSignedUrl(attachment.path, 60 * 10);
+      if (signedError || !data?.signedUrl) return null;
+      return [message.id, data.signedUrl] as const;
+    })).then((entries) => {
+      if (!active) return;
+      const valid = entries.filter((entry): entry is readonly [string, string] => !!entry);
+      if (valid.length) setMediaPreviewUrls((current) => ({ ...current, ...Object.fromEntries(valid) }));
+    });
+    return () => { active = false; };
+  }, [messages, selected?.id, demoMode, mediaPreviewUrls]);
 
   async function loadConversations() {
     if (demoMode) {
@@ -630,6 +654,8 @@ export default function App() {
                 {!!quoted && <View style={s.replyQuote}><Text style={s.replyQuoteText} numberOfLines={2}>{quoted.deleted_at ? "پیام حذف شده" : quoted.body}</Text></View>}
                 {parseMediaMessage(item.body) ? (
                   <Pressable onPress={() => openMediaAttachment(item.body)} style={s.attachmentCard}>
+                    {parseMediaMessage(item.body)?.mime.startsWith("image/") && !!mediaPreviewUrls[item.id] &&
+                      <Image source={{ uri: mediaPreviewUrls[item.id] }} style={{ width: 220, height: 160, borderRadius: 12, marginBottom: 8 }} resizeMode="cover" />}
                     <Text style={s.attachmentTitle}>▣ {parseMediaMessage(item.body)?.name}</Text>
                     <Text style={s.attachmentMeta}>{parseMediaMessage(item.body)?.mime} · {Math.max(1, Math.round((parseMediaMessage(item.body)?.size || 0) / 1024))} KB</Text>
                     <Text style={s.attachmentOpen}>برای دریافت فایل لمس کنید</Text>
