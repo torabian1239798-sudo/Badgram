@@ -6,7 +6,7 @@ import {
 import { StatusBar } from "expo-status-bar";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
-import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from "expo-audio";
+import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder, useAudioRecorderState, useAudioPlayer } from "expo-audio";
 import { isSupabaseConfigured, supabase } from "./src/supabase";
 
 type Chat = {
@@ -63,6 +63,7 @@ export default function App() {
   const [groupPhone, setGroupPhone] = useState("");
   const [groupBusy, setGroupBusy] = useState(false);
   const [mediaBusy, setMediaBusy] = useState(false);
+  const audioPlayer = useAudioPlayer(null);
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder);
   const openChatRequest = useRef(0);
@@ -346,7 +347,12 @@ export default function App() {
         setError(urlError?.message || "لینک فایل ساخته نشد.");
         return;
       }
-      await Linking.openURL(data.signedUrl);
+      if (attachment.mime.startsWith("audio/")) {
+        audioPlayer.replace(data.signedUrl);
+        audioPlayer.play();
+      } else {
+        await Linking.openURL(data.signedUrl);
+      }
     } catch (error: any) {
       setError(error?.message || "باز کردن فایل انجام نشد.");
     }
