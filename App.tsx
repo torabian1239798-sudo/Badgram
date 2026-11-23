@@ -46,6 +46,7 @@ export default function App() {
   const [modalOpen, setModalOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [memberPhones, setMemberPhones] = useState("");
+  const [newChatType, setNewChatType] = useState<"private" | "group">("private");
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
@@ -215,6 +216,14 @@ export default function App() {
       setError("برای گفتگو یا گروه یک نام وارد کنید.");
       return;
     }
+    if (newChatType === "private" && phones.length !== 1) {
+      setError("برای گفتگوی خصوصی دقیقاً یک شماره عضو وارد کنید.");
+      return;
+    }
+    if (newChatType === "group" && phones.length < 1) {
+      setError("برای ساخت گروه، حداقل شماره یک عضو را وارد کنید.");
+      return;
+    }
     if (phones.some((item) => !/^\+[1-9]\d{7,14}$/.test(item))) {
       setError("شماره اعضا باید با کد کشور و علامت + وارد شود.");
       return;
@@ -222,9 +231,9 @@ export default function App() {
     setCreating(true);
     setError("");
     if (demoMode) {
-      const chat: Chat = { id: "demo-chat-" + Date.now(), title, is_group: phones.length > 1, preview: "گفتگوی آزمایشی ساخته شد", time: chatTime(new Date().toISOString()) };
+      const chat: Chat = { id: "demo-chat-" + Date.now(), title, is_group: newChatType === "group", preview: "گفتگوی آزمایشی ساخته شد", time: chatTime(new Date().toISOString()) };
       setChats(current => [chat, ...current]);
-      setModalOpen(false); setNewTitle(""); setMemberPhones(""); setSelected(chat);
+      setModalOpen(false); setNewTitle(""); setMemberPhones(""); setNewChatType("private"); setSelected(chat);
       setMessages([{ id: "demo-welcome-" + Date.now(), body: "گفتگو در حالت آزمایشی ساخته شد.", sender_id: "demo-user", created_at: new Date().toISOString() }]);
       setCreating(false);
       return;
@@ -247,9 +256,8 @@ export default function App() {
       }
       memberIds.push(found.user_id);
     }
-    const isGroup = memberIds.length > 2;
     const { data: created, error: createError } = await supabase.from("conversations")
-      .insert({ title, is_group: isGroup, created_by: session.user.id })
+      .insert({ title, is_group: newChatType === "group", created_by: session.user.id })
       .select("id,title,is_group,created_at").single();
     if (createError || !created) {
       setError(createError?.message || "ساخت گفتگو انجام نشد.");
@@ -275,6 +283,7 @@ export default function App() {
     setModalOpen(false);
     setNewTitle("");
     setMemberPhones("");
+    setNewChatType("private");
     await loadConversations();
     openChat(chat);
   }
@@ -381,12 +390,16 @@ export default function App() {
         <View style={s.modalBackdrop}>
           <View style={s.modalCard}>
             <Text style={s.heading}>گفتگوی جدید یا گروه</Text>
-            <Text style={s.muted}>نام گفتگو را بنویسید و شماره اعضا را با کد کشور وارد کنید. برای گفتگوی خصوصی فقط یک شماره وارد کنید.</Text>
+            <Text style={s.muted}>نوع گفتگو را انتخاب کنید، سپس نام و شماره اعضا را وارد کنید.</Text>
+            <View style={{ flexDirection: "row", gap: 10, marginTop: 14 }}>
+              <Pressable onPress={() => setNewChatType("private")} style={[s.secondary, { flex: 1, marginTop: 0, backgroundColor: newChatType === "private" ? "rgba(117,217,248,.16)" : "transparent" }]}><Text style={s.secondaryText}>گفتگوی خصوصی</Text></Pressable>
+              <Pressable onPress={() => setNewChatType("group")} style={[s.secondary, { flex: 1, marginTop: 0, backgroundColor: newChatType === "group" ? "rgba(117,217,248,.16)" : "transparent" }]}><Text style={s.secondaryText}>گروه</Text></Pressable>
+            </View>
             <TextInput value={newTitle} onChangeText={setNewTitle} placeholder="نام گفتگو" placeholderTextColor="#8293A9" style={s.input} />
-            <TextInput value={memberPhones} onChangeText={setMemberPhones} placeholder="+98912... ، +98913..." placeholderTextColor="#8293A9" style={[s.input, { minHeight: 78 }]} multiline textAlignVertical="top" />
+            <TextInput value={memberPhones} onChangeText={setMemberPhones} placeholder={newChatType === "private" ? "+98912..." : "+98912... ، +98913..."} placeholderTextColor="#8293A9" style={[s.input, { minHeight: 78 }]} multiline textAlignVertical="top" />
             {!!error && <Text style={s.error}>{error}</Text>}
             <Pressable style={s.primary} onPress={createConversation} disabled={creating}>
-              {creating ? <ActivityIndicator color="#06111F" /> : <Text style={s.primaryText}>ایجاد گفتگو</Text>}
+              {creating ? <ActivityIndicator color="#06111F" /> : <Text style={s.primaryText}>{newChatType === "group" ? "ایجاد گروه" : "ایجاد گفتگوی خصوصی"}</Text>}
             </Pressable>
             <Pressable style={s.secondary} onPress={() => setModalOpen(false)}><Text style={s.secondaryText}>انصراف</Text></Pressable>
           </View>
