@@ -629,10 +629,13 @@ export default function App() {
           <Pressable onPress={() => { setReplyTo(null); setEditingMessageId(null); setDraft(""); }}><Text style={s.cancelContext}>لغو</Text></Pressable>
         </View>}
         <View style={s.composer}>
-          {!editingMessageId && <Pressable onPress={pickChatMedia} disabled={mediaBusy} style={s.attachButton}><Text style={s.attachText}>▧</Text></Pressable>}
-          {!editingMessageId && <Pressable onPress={pickChatDocument} disabled={mediaBusy} style={s.attachButton}><Text style={s.attachText}>＋</Text></Pressable>}
-          <TextInput value={draft} onChangeText={setDraft} placeholder={editingMessageId ? "متن اصلاح‌شده..." : "پیام بنویسید..."} placeholderTextColor="#8190A4" style={s.composerInput} multiline />
-          <Pressable onPress={sendMessage} style={s.send} disabled={busy || mediaBusy || !draft.trim()}>
+          {!editingMessageId && <Pressable onPress={pickChatMedia} disabled={mediaBusy || recorderState.isRecording} style={s.attachButton}><Text style={s.attachText}>▧</Text></Pressable>}
+          {!editingMessageId && <Pressable onPress={pickChatDocument} disabled={mediaBusy || recorderState.isRecording} style={s.attachButton}><Text style={s.attachText}>＋</Text></Pressable>}
+          {!editingMessageId && !demoMode && (recorderState.isRecording
+            ? <Pressable onPress={stopAndSendVoice} style={s.attachButton}><Text style={s.attachText}>■</Text></Pressable>
+            : <Pressable onPress={startVoiceRecording} disabled={mediaBusy} style={s.attachButton}><Text style={s.attachText}>🎙</Text></Pressable>)}
+          <TextInput value={draft} onChangeText={setDraft} placeholder={recorderState.isRecording ? "در حال ضبط پیام صوتی..." : editingMessageId ? "متن اصلاح‌شده..." : "پیام بنویسید..."} placeholderTextColor="#8190A4" style={s.composerInput} multiline editable={!recorderState.isRecording} />
+          <Pressable onPress={sendMessage} style={s.send} disabled={busy || mediaBusy || recorderState.isRecording || !draft.trim()}>
             {busy || mediaBusy ? <ActivityIndicator color="#06111F" /> : <Text style={s.sendText}>➤</Text>}
           </Pressable>
         </View>
