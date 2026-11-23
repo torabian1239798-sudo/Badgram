@@ -199,6 +199,15 @@ export default function App() {
           ? { ...chat, preview: incoming.body, time: chatTime(incoming.created_at) }
           : chat));
       })
+      .on("postgres_changes", {
+        event: "UPDATE",
+        schema: "public",
+        table: "messages",
+        filter: "conversation_id=eq." + selected.id
+      }, (payload) => {
+        const updated = payload.new as Message;
+        setMessages((current) => current.map((item) => item.id === updated.id ? { ...item, ...updated } : item));
+      })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [selected?.id, demoMode]);
@@ -245,10 +254,11 @@ export default function App() {
       return;
     }
     if (demoMode) {
-      const item: Message = { id: "demo-" + Date.now(), body, sender_id: "demo-user", created_at: new Date().toISOString() };
+      const item: Message = { id: "demo-" + Date.now(), body, sender_id: "demo-user", created_at: new Date().toISOString(), reply_to_message_id: replyTo?.id ?? null };
       setMessages(current => [...current, item]);
       setChats(current => current.map(chat => chat.id === selected.id ? { ...chat, preview: body, time: chatTime(item.created_at) } : chat));
       setDraft("");
+      setReplyTo(null);
       return;
     }
     if (!session?.user?.id) return;
