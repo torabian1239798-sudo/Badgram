@@ -55,6 +55,10 @@ export default function App() {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [readMessageIds, setReadMessageIds] = useState<string[]>([]);
+  const [groupManageOpen, setGroupManageOpen] = useState(false);
+  const [groupMembers, setGroupMembers] = useState<Array<{ user_id: string; role: string }>>([]);
+  const [groupPhone, setGroupPhone] = useState("");
+  const [groupBusy, setGroupBusy] = useState(false);
   const openChatRequest = useRef(0);
 
   useEffect(() => {
@@ -211,6 +215,47 @@ export default function App() {
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [selected?.id, demoMode]);
+
+  async function loadGroupMembers() {
+    if (!selected?.is_group || demoMode) return;
+    const { data, error: memberError } = await supabase.from("conversation_members")
+      .select("user_id,role").eq("conversation_id", selected.id).order("joined_at", { ascending: true });
+    if (memberError) setError(memberError.message);
+    else setGroupMembers((data ?? []) as Array<{ user_id: string; role: string }>);
+  }
+
+  async function addGroupMember() {
+    if (!selected || !groupPhone.trim()) return;
+    const clean = normalizePhone(groupPhone);
+    if (!/^\\+[1-9]\\d{7,14}$/.test(clean)) { setError("شماره را با کد کشور وارد کنید."); return; }
+    setGroupBusy(true); setError("");
+    const { data, error: lookupError } = await supabase.rpc("find_profile_by_phone", { p_phone: clean });
+    const found = (data ?? [])[0];
+    if (lookupError || !found?.user_id) {
+      setError(lookupError?.message || "این شماره در بادگرام ثبت‌نام نکرده است.");
+      setGroupBusy(false); return;
+    }
+    const { error: insertError } = await supabase.from("conversation_members").insert({ conversation_id: selected.id, user_id: found.user_id });
+    if (insertError) setError(insertError.message);
+    else { setGroupPhone(""); await loadGroupMembers(); }
+    setGroupBusy(false);
+  }
+
+  async function changeGroupMemberRole(userId: string, role: string) {
+    if (!selected) return;
+    setGroupBusy(true); setError("");
+    const { error: roleError } = await supabase.from("conversation_members").update({ role }).eq("conversation_id", selected.id).eq("user_id", userId);
+    if (roleError) setError(roleError.message); else await loadGroupMembers();
+    setGroupBusy(false);
+  }
+
+  async function removeGroupMember(userId: string) {
+    if (!selected) return;
+    setGroupBusy(true); setError("");
+    const { error: removeError } = await supabase.from("conversation_members").delete().eq("conversation_id", selected.id).eq("user_id", userId);
+    if (removeError) setError(removeError.message); else await loadGroupMembers();
+    setGroupBusy(false);
+  }
 
   async function deleteMessage(message: Message) {
     if (demoMode) {
@@ -400,7 +445,7 @@ export default function App() {
       <View style={s.header}>
         <Pressable onPress={() => { setSelected(null); setError(""); }}><Text style={s.back}>بازگشت</Text></Pressable>
         <View style={{ flex: 1 }}><Text style={s.chatTitle}>{selected.title}</Text><Text style={s.online}>{selected.is_group ? "گروه" : "گفتگوی خصوصی"}</Text></View>
-        <Text style={s.muted}>•••</Text>
+        {selected.is_group && <Pressable onPress={() => { setGroupManageOpen(true); void loadGroupMembers(); }}><Text style={s.back}>مدیریت گروه</Text></Pressable>}
       </View>
       {!!error && <Text style={s.errorBanner}>{error}</Text>}
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
@@ -429,6 +474,28 @@ export default function App() {
           </Pressable>
         </View>
       </KeyboardAvoidingView>
+      <Modal visible={groupManageOpen} transparent animationType="slide" onRequestClose={() => setGroupManageOpen(false)}>
+        <View style={s.modalBackdrop}>
+          <View style={s.modalCard}>
+            <Text style={s.heading}>مدیریت اعضای گروه</Text>
+            <Text style={s.muted}>مالک می‌تواند مدیر تعیین کند؛ مدیران امکان افزودن و حذف اعضا دارند.</Text>
+            <TextInput value={groupPhone} onChangeText={setGroupPhone} placeholder="شماره عضو جدید، مثل +98912..." placeholderTextColor="#8293A9" style={s.input} />
+            <Pressable style={s.primary} onPress={addGroupMember} disabled={groupBusy}><Text style={s.primaryText}>افزودن عضو</Text></Pressable>
+            <FlatList data={groupMembers} keyExtractor={(m) => m.user_id} style={{ maxHeight: 280 }} renderItem={({item}) => (
+              <View style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "rgba(180,220,255,.1)" }}>
+                <Text style={s.chatName}>{item.user_id.slice(0, 8)}…  ·  {item.role === "owner" ? "مالک" : item.role === "admin" ? "مدیر" : "عضو"}</Text>
+                {item.role !== "owner" && <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+                  {item.role === "member" && <Pressable onPress={() => changeGroupMemberRole(item.user_id, "admin")}><Text style={s.back}>ارتقا به مدیر</Text></Pressable>}
+                  {item.role === "admin" && <Pressable onPress={() => changeGroupMemberRole(item.user_id, "member")}><Text style={s.back}>تنزل به عضو</Text></Pressable>}
+                  <Pressable onPress={() => removeGroupMember(item.user_id)}><Text style={s.cancelContext}>حذف عضو</Text></Pressable>
+                </View>}
+              </View>
+            )} />
+            {!!error && <Text style={s.error}>{error}</Text>}
+            <Pressable style={s.secondary} onPress={() => setGroupManageOpen(false)}><Text style={s.secondaryText}>بستن</Text></Pressable>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 
