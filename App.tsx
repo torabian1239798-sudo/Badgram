@@ -332,7 +332,7 @@ export default function App() {
       return;
     }
     const mime = asset.mimeType || "application/octet-stream";
-    const allowed = /^(image\\/(jpeg|png|webp|gif)|video\\/(mp4|quicktime|webm)|audio\\/(mpeg|mp4|aac|ogg|webm|wav)|application\\/pdf)$/.test(mime);
+    const allowed = /^(image\/(jpeg|png|webp|gif)|video\/(mp4|quicktime|webm)|audio\/(mpeg|mp4|aac|ogg|webm|wav)|application\/pdf)$/.test(mime);
     if (!allowed) { setError("این نوع فایل پشتیبانی نمی‌شود."); return; }
     if (asset.size && asset.size > 50 * 1024 * 1024) { setError("حداکثر حجم فایل ۵۰ مگابایت است."); return; }
     setMediaBusy(true); setError("");
