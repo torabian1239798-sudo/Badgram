@@ -9,7 +9,10 @@ A Persian-first Expo / React Native messaging app with a dark glass UI and Supab
 - Private conversations and group creation using registered phone numbers.
 - Conversation list backed by PostgreSQL.
 - Message history and live incoming-message updates through Supabase Realtime.
-- Row Level Security policies for profiles, conversations, memberships, and messages.
+- Message replies, editing, soft deletion, and read receipts with realtime updates.
+- Group membership management with owner/admin/member roles.
+- Private Storage attachments for images, videos, audio, and PDF documents; image previews and in-app audio/video playback are implemented in the active feature branch and still require device testing.
+- Row Level Security policies for profiles, conversations, memberships, messages, read receipts, and private media storage.
 
 ## Requirements
 
@@ -62,7 +65,7 @@ The preview profile is configured for an installable APK.
 
 ## Important limitations
 
-This is an active foundation, not a production-certified messenger. It currently supports text messages, registered-phone lookup, basic private/group conversation creation, and live message inserts. It does not yet include media uploads, push notifications, message editing/deletion, read receipts, blocking/reporting, end-to-end encryption, or a full moderation/admin system. Complete security review, SMS-provider configuration, and real-device testing are still required before public release.
+This is an active development build, not a production-certified messenger. Media attachments, voice recording/playback, in-chat video playback, group administration, and realtime read receipts are under active implementation. Push notifications, online presence, block/report tools, end-to-end encryption, full moderation/admin tools, production SMS delivery, and real-device multi-account verification remain incomplete. Media and audio/video code must pass Android build and physical-device tests before being treated as production-ready.
 
 ## Iranian SMS delivery (Kavenegar)
 

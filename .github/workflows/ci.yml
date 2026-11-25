@@ -4,7 +4,7 @@ on:
   push:
     branches: [main, "feature/**"]
   pull_request:
-    branches: [main]
+    branches: [main, "feature/**"]
 
 jobs:
   validate:
@@ -18,7 +18,11 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: npm install
+      - name: Expo dependency compatibility check
+        run: npx expo install --check
       - name: TypeScript check
         run: npm run typecheck
       - name: Export Android bundle
         run: npx expo export --platform android --output-dir dist
+      - name: Export Web bundle
+        run: npx expo export --platform web --output-dir dist-web

@@ -5,7 +5,26 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
-    "android": { "package": "com.badgram.app" },
-    "web": { "bundler": "metro" }
+    "icon": "./assets/icon.png",
+    "android": {
+      "package": "com.badgram.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#061b58"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "favicon": "./assets/icon.png"
+    },
+    "plugins": [
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "اجازه دسترسی به میکروفون برای ضبط پیام صوتی در بادگرام",
+          "recordAudioAndroid": true
+        }
+      ]
+    ]
   }
 }

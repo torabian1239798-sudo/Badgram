@@ -8,7 +8,7 @@ on:
       - "**"
       - "!docs/**"
   pull_request:
-    branches: [main]
+    branches: [main, "feature/**"]
   workflow_dispatch:
 
 permissions:
@@ -40,13 +40,12 @@ jobs:
       - name: Install JavaScript dependencies
         run: npm install
 
+      - name: Generate app icon PNG assets
+        run: npm run prebuild:native
+
       - name: Generate native Android project
         run: npx expo prebuild --platform android --non-interactive
 
-      # A React Native debug variant intentionally does not embed the JS bundle:
-      # it expects Metro on port 8081. Release variants bundle JS/assets into the APK.
-      # The generated Expo template signs the local release variant with the debug
-      # keystore, making this an installable, self-contained test APK (not store-ready).
       - name: Build self-contained Android test APK
         working-directory: android
         run: |
