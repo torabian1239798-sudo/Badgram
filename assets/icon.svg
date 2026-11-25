@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<defs>
+ <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#02091f"/><stop offset=".52" stop-color="#061b58"/><stop offset="1" stop-color="#020821"/></linearGradient>
+ <linearGradient id="blue" x1=".1" y1="0" x2=".9" y2="1"><stop stop-color="#00f5ff"/><stop offset=".35" stop-color="#087bff"/><stop offset=".72" stop-color="#0739d9"/><stop offset="1" stop-color="#00d9f2"/></linearGradient>
+ <linearGradient id="cyan" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#9affff"/><stop offset=".3" stop-color="#00d9f5"/><stop offset=".75" stop-color="#0875ff"/><stop offset="1" stop-color="#071d75"/></linearGradient>
+ <linearGradient id="plane" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fff"/><stop offset=".7" stop-color="#edf5ff"/><stop offset="1" stop-color="#91baff"/></linearGradient>
+ <filter id="glow"><feGaussianBlur stdDeviation="18"/></filter>
+ <filter id="shadow"><feGaussianBlur stdDeviation="22"/></filter>
+</defs>
+<rect width="1024" height="1024" rx="210" fill="url(#bg)"/>
+<rect x="76" y="76" width="872" height="872" rx="190" fill="url(#blue)" opacity=".42" filter="url(#glow)"/>
+<rect x="88" y="88" width="848" height="848" rx="182" fill="url(#blue)" stroke="#28eaff" stroke-width="8"/>
+<path d="M350 180 H700 Q855 180 870 325 Q883 445 770 505 Q910 555 900 710 Q890 855 710 860 H205 Q270 755 405 725 H700 Q790 725 790 650 Q790 585 700 585 H430 L490 455 H700 Q755 455 755 380 Q755 300 680 300 H330 Z" fill="url(#cyan)" stroke="#a8ffff" stroke-width="7"/>
+<path d="M170 630 Q235 500 420 430 L510 480 Q335 545 260 660 Q210 740 330 755 Q500 778 680 655 Q555 790 355 815 Q160 835 120 735 Q95 685 170 630Z" fill="#06165b" stroke="#00eaff" stroke-width="9"/>
+<path d="M120 650 Q205 525 405 465 L465 500 Q300 560 225 665 Q170 745 300 755 Q470 770 640 670 Q520 790 320 790 Q135 790 120 700Z" fill="none" stroke="url(#plane)" stroke-width="24"/>
+<path d="M320 365 L820 260 L650 610 L515 490 L450 620 L430 445 Z" fill="#00134d" opacity=".65" filter="url(#shadow)"/>
+<path d="M325 360 L825 255 L650 610 L515 490 L455 620 L430 445 Z" fill="url(#plane)" stroke="#fff" stroke-width="5" stroke-linejoin="round"/>
+<path d="M430 445 L825 255 L515 490 L455 620 Z" fill="#0b64ec" opacity=".9"/>
+<path d="M430 445 L825 255 L515 490" fill="none" stroke="#fff" stroke-width="5"/>
+</svg>
